@@ -10,8 +10,11 @@ func SetupRoutes(r *gin.Engine, orch *orchestrator.Orchestrator) {
 	handler := NewHandler(orch)
 
 	// Serve static files
-	r.Static("/static", "./web/dist")
-	r.StaticFile("/", "./web/dist/index.html")
+	r.Static("/static", "./web/dist/static")
+	r.StaticFile("/manifest.json", "./web/dist/manifest.json")
+	r.NoRoute(func(c *gin.Context) {
+		c.File("./web/dist/index.html")
+	})
 	r.StaticFile("/favicon.ico", "./web/dist/favicon.ico")
 
 	// API routes
