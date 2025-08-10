@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.full
+    ports:
+      - "8080:8080"
+    environment:
+      - DO_API_TOKEN=${DO_API_TOKEN}
+      - REDIS_URL=redis:6379
+      - MAIN_SERVER_IP=${MAIN_SERVER_IP}
+      - PORT=8080
+      - GIN_MODE=release
+    depends_on:
+      - redis
+    restart: unless-stopped
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - nuclei-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - nuclei-network
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
+    driver: local
+  app_logs:
+    driver: local
+
+networks:
+  nuclei-network:
+    driver: bridge

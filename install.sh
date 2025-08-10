@@ -428,8 +428,8 @@ start_application() {
     cd "$INSTALL_DIR"
     
     # Verify files were copied correctly
-    if [[ ! -f "docker/docker-compose.simple.yml" ]]; then
-        error "docker/docker-compose.simple.yml not found in $INSTALL_DIR. Files may not have been copied correctly."
+    if [[ ! -f "docker/docker-compose.full.yml" ]]; then
+        error "docker/docker-compose.full.yml not found in $INSTALL_DIR. Files may not have been copied correctly."
     fi
     
     # Export environment variables for docker-compose
@@ -437,18 +437,18 @@ start_application() {
     source .env
     set +a  # stop auto-exporting
     
-    info "Starting simplified Nuclei Distributed Scanner..."
-    # Build and start services with simplified setup
-    docker-compose -f docker/docker-compose.simple.yml up -d --build
+    info "Starting full Nuclei Distributed Scanner with backend API..."
+    # Build and start services with full backend
+    docker-compose -f docker/docker-compose.full.yml up -d --build
     
     # Wait for services to start
     sleep 10
     
     # Check if services are running
-    if docker-compose -f docker/docker-compose.simple.yml ps | grep -q "Up"; then
+    if docker-compose -f docker/docker-compose.full.yml ps | grep -q "Up"; then
         log "Application started successfully!"
     else
-        error "Failed to start application. Check logs with: docker-compose -f docker/docker-compose.simple.yml logs"
+        error "Failed to start application. Check logs with: docker-compose -f docker/docker-compose.full.yml logs"
     fi
 }
 
@@ -460,7 +460,7 @@ create_management_scripts() {
     cat > /usr/local/bin/nuclei-start << 'EOF'
 #!/bin/bash
 cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.simple.yml up -d
+docker-compose -f docker/docker-compose.full.yml up -d
 echo "Nuclei Distributed Scanner started"
 echo "Access at: http://$(hostname -I | awk '{print $1}'):8080"
 EOF
@@ -469,7 +469,7 @@ EOF
     cat > /usr/local/bin/nuclei-stop << 'EOF'
 #!/bin/bash
 cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.simple.yml down
+docker-compose -f docker/docker-compose.full.yml down
 echo "Nuclei Distributed Scanner stopped"
 EOF
     
@@ -478,17 +478,17 @@ EOF
 #!/bin/bash
 cd /opt/nuclei-distributed
 echo "=== Service Status ==="
-docker-compose -f docker/docker-compose.simple.yml ps
+docker-compose -f docker/docker-compose.full.yml ps
 echo
 echo "=== Recent Logs ==="
-docker-compose -f docker/docker-compose.simple.yml logs --tail=10
+docker-compose -f docker/docker-compose.full.yml logs --tail=10
 EOF
     
     # Create logs script
     cat > /usr/local/bin/nuclei-logs << 'EOF'
 #!/bin/bash
 cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.simple.yml logs -f
+docker-compose -f docker/docker-compose.full.yml logs -f
 EOF
     
     # Create cleanup script

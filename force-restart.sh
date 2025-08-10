@@ -4,7 +4,7 @@ echo "🔄 Force restarting Nuclei Distributed Scanner..."
 
 # Stop all containers
 echo "⏹️ Stopping containers..."
-docker-compose -f docker/docker-compose.simple.yml down
+docker-compose -f docker/docker-compose.full.yml down
 
 # Remove all related images to force rebuild
 echo "🗑️ Removing old images..."
@@ -21,8 +21,8 @@ docker builder prune -f
 
 # Rebuild and start with no cache
 echo "🚀 Rebuilding and starting (no cache)..."
-docker-compose -f docker/docker-compose.simple.yml build --no-cache
-docker-compose -f docker/docker-compose.simple.yml up -d
+docker-compose -f docker/docker-compose.full.yml build --no-cache
+docker-compose -f docker/docker-compose.full.yml up -d
 
 echo "✅ Force restart complete!"
 echo "🌐 Check: http://139.59.26.176:8080"
@@ -31,4 +31,4 @@ echo "🌐 Check: http://139.59.26.176:8080"
 sleep 5
 echo ""
 echo "📊 Container Status:"
-docker-compose -f docker/docker-compose.simple.yml ps
+docker-compose -f docker/docker-compose.full.yml ps
