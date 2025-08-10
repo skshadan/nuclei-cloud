@@ -28,9 +28,9 @@ cd "$TEMP_DIR"
 echo -e "${GREEN}📥 Downloading installation files...${NC}"
 
 # Download the repository
-curl -L https://github.com/your-username/nuclei-distributed/archive/main.tar.gz -o nuclei-distributed.tar.gz
-tar -xzf nuclei-distributed.tar.gz
-cd nuclei-distributed-main/
+curl -L https://github.com/skshadan/nuclei-cloud/archive/main.tar.gz -o nuclei-cloud.tar.gz
+tar -xzf nuclei-cloud.tar.gz
+cd nuclei-cloud-main/
 
 # Make installer executable
 chmod +x install.sh

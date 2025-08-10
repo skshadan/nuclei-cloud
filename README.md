@@ -43,7 +43,7 @@ A powerful distributed vulnerability scanner that runs Nuclei across multiple Di
 
 ```bash
 # Install everything automatically (Ubuntu/Debian/CentOS/RHEL)
-curl -sSL https://raw.githubusercontent.com/your-username/nuclei-distributed/main/quickstart.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/skshadan/nuclei-cloud/main/quickstart.sh | sudo bash
 ```
 
 This single command will:
@@ -61,8 +61,8 @@ If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/nuclei-distributed.git
-cd nuclei-distributed
+git clone https://github.com/skshadan/nuclei-cloud.git
+cd nuclei-cloud
 
 # 2. Run the installer
 sudo ./install.sh
