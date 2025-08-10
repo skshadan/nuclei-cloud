@@ -121,15 +121,15 @@ update_system() {
     case "$OS" in
         *"Ubuntu"*|*"Debian"*)
             apt-get update && apt-get upgrade -y
-            apt-get install -y curl wget git ufw openssl jq make
+            apt-get install -y curl wget git ufw openssl jq make rsync
             ;;
         *"CentOS"*|*"Red Hat"*|*"Rocky"*|*"AlmaLinux"*)
             yum update -y
-            yum install -y curl wget git firewalld openssl jq make
+            yum install -y curl wget git firewalld openssl jq make rsync
             ;;
         *"Fedora"*)
             dnf update -y
-            dnf install -y curl wget git firewalld openssl jq make
+            dnf install -y curl wget git firewalld openssl jq make rsync
             ;;
         *)
             warn "Unsupported OS. Attempting to continue..."
@@ -230,40 +230,50 @@ setup_project_directory() {
         info "Original directory: $ORIGINAL_DIR"
         info "Install directory: $INSTALL_DIR"
         
-        # Check if we have the required files in the original directory
-        if [[ -f "$ORIGINAL_DIR/docker/Dockerfile.main" ]]; then
-            info "Found Dockerfile.main in original directory: $ORIGINAL_DIR"
-            info "Copying files from $ORIGINAL_DIR to $INSTALL_DIR"
-            
-            # Copy all files and directories
-            cp -r "$ORIGINAL_DIR"/* "$INSTALL_DIR"/ 2>/dev/null || true
-            
-            # Copy hidden files (like .env) but skip . and ..
-            find "$ORIGINAL_DIR" -maxdepth 1 -name '.*' ! -name '.' ! -name '..' -exec cp -r {} "$INSTALL_DIR"/ \; 2>/dev/null || true
-            
-            # Verify critical files were copied
-            if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
-                error "Failed to copy docker-compose.prod.yml to $INSTALL_DIR"
-            fi
-            
-            info "Files copied successfully. Contents of $INSTALL_DIR:"
-            ls -la "$INSTALL_DIR"
-        else
-            # Fallback: try script directory
-            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-            info "Trying script directory: $SCRIPT_DIR"
-            
-            if [[ -f "$SCRIPT_DIR/docker/Dockerfile.main" ]]; then
-                info "Found Dockerfile.main in script directory"
-                cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR"/ 2>/dev/null || true
-                cp -r "$SCRIPT_DIR"/.[^.]* "$INSTALL_DIR"/ 2>/dev/null || true
-            else
-                info "Debug information:"
-                info "Original directory contents: $(ls -la $ORIGINAL_DIR 2>/dev/null || echo 'Original directory not accessible')"
-                info "Script directory contents: $(ls -la $SCRIPT_DIR 2>/dev/null || echo 'Script directory not accessible')"
-                error "Cannot find required files. Checked $ORIGINAL_DIR/docker/Dockerfile.main and $SCRIPT_DIR/docker/Dockerfile.main"
-            fi
+        # First, ensure we're in the original directory
+        cd "$ORIGINAL_DIR"
+        
+        # Verify we have the required files
+        if [[ ! -f "docker/Dockerfile.main" ]]; then
+            error "docker/Dockerfile.main not found in $ORIGINAL_DIR. Please run from the nuclei-cloud project directory."
         fi
+        
+        if [[ ! -f "docker/docker-compose.prod.yml" ]]; then
+            error "docker/docker-compose.prod.yml not found in $ORIGINAL_DIR. Missing required files."
+        fi
+        
+        info "Found all required files. Copying from $ORIGINAL_DIR to $INSTALL_DIR"
+        
+        # Use rsync for reliable copying (fallback to cp if rsync not available)
+        if command -v rsync >/dev/null 2>&1; then
+            info "Using rsync for file copying..."
+            rsync -av --exclude='.git' ./ "$INSTALL_DIR/"
+        else
+            info "Using cp for file copying..."
+            # Copy all visible files and directories
+            cp -r * "$INSTALL_DIR/" 2>/dev/null
+            
+            # Copy hidden files one by one to avoid . and .. issues  
+            for file in .[^.]*; do
+                if [[ -e "$file" ]]; then
+                    cp -r "$file" "$INSTALL_DIR/" 2>/dev/null
+                fi
+            done
+        fi
+        
+        # Verify critical files were copied
+        if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
+            error "Critical file docker/docker-compose.prod.yml missing after copy. Installation failed."
+        fi
+        
+        if [[ ! -f "$INSTALL_DIR/docker/Dockerfile.main" ]]; then
+            error "Critical file docker/Dockerfile.main missing after copy. Installation failed."
+        fi
+        
+        info "Files copied successfully. Verifying install directory contents:"
+        ls -la "$INSTALL_DIR/"
+        info "Docker directory contents:"
+        ls -la "$INSTALL_DIR/docker/"
     fi
     
     # Change to install directory after copying
