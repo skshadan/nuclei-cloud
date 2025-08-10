@@ -220,61 +220,60 @@ setup_project_directory() {
     # Create installation directory
     mkdir -p "$INSTALL_DIR"
     
-    # Clone or update repository
-    if [[ -d ".git" ]]; then
-        info "Updating existing installation..."
-        git pull origin main || git pull origin master
-    else
-        info "Fresh installation..."
-        
-        info "Original directory: $ORIGINAL_DIR"
-        info "Install directory: $INSTALL_DIR"
-        
-        # First, ensure we're in the original directory
-        cd "$ORIGINAL_DIR"
-        
-        # Verify we have the required files
-        if [[ ! -f "docker/Dockerfile.main" ]]; then
-            error "docker/Dockerfile.main not found in $ORIGINAL_DIR. Please run from the nuclei-cloud project directory."
-        fi
-        
-        if [[ ! -f "docker/docker-compose.prod.yml" ]]; then
-            error "docker/docker-compose.prod.yml not found in $ORIGINAL_DIR. Missing required files."
-        fi
-        
-        info "Found all required files. Copying from $ORIGINAL_DIR to $INSTALL_DIR"
-        
-        # Use rsync for reliable copying (fallback to cp if rsync not available)
-        if command -v rsync >/dev/null 2>&1; then
-            info "Using rsync for file copying..."
-            rsync -av --exclude='.git' ./ "$INSTALL_DIR/"
-        else
-            info "Using cp for file copying..."
-            # Copy all visible files and directories
-            cp -r * "$INSTALL_DIR/" 2>/dev/null
-            
-            # Copy hidden files one by one to avoid . and .. issues  
-            for file in .[^.]*; do
-                if [[ -e "$file" ]]; then
-                    cp -r "$file" "$INSTALL_DIR/" 2>/dev/null
-                fi
-            done
-        fi
-        
-        # Verify critical files were copied
-        if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
-            error "Critical file docker/docker-compose.prod.yml missing after copy. Installation failed."
-        fi
-        
-        if [[ ! -f "$INSTALL_DIR/docker/Dockerfile.main" ]]; then
-            error "Critical file docker/Dockerfile.main missing after copy. Installation failed."
-        fi
-        
-        info "Files copied successfully. Verifying install directory contents:"
-        ls -la "$INSTALL_DIR/"
-        info "Docker directory contents:"
-        ls -la "$INSTALL_DIR/docker/"
+    # Always do fresh installation - copy files from current directory to install directory
+    info "Fresh installation - copying files from $ORIGINAL_DIR to $INSTALL_DIR"
+    
+    info "Original directory: $ORIGINAL_DIR"
+    info "Install directory: $INSTALL_DIR"
+    
+    # First, ensure we're in the original directory
+    cd "$ORIGINAL_DIR"
+    
+    # Verify we have the required files
+    if [[ ! -f "docker/Dockerfile.main" ]]; then
+        error "docker/Dockerfile.main not found in $ORIGINAL_DIR. Please run from the nuclei-cloud project directory."
     fi
+    
+    if [[ ! -f "docker/docker-compose.prod.yml" ]]; then
+        error "docker/docker-compose.prod.yml not found in $ORIGINAL_DIR. Missing required files."
+    fi
+    
+    info "Found all required files. Copying from $ORIGINAL_DIR to $INSTALL_DIR"
+    
+    # Remove any existing installation to ensure clean copy
+    rm -rf "$INSTALL_DIR"/*
+    rm -rf "$INSTALL_DIR"/.[^.]*
+    
+    # Use rsync for reliable copying (fallback to cp if rsync not available)
+    if command -v rsync >/dev/null 2>&1; then
+        info "Using rsync for file copying..."
+        rsync -av --exclude='.git' ./ "$INSTALL_DIR/"
+    else
+        info "Using cp for file copying..."
+        # Copy all visible files and directories
+        cp -r * "$INSTALL_DIR/" 2>/dev/null
+        
+        # Copy hidden files one by one to avoid . and .. issues  
+        for file in .[^.]*; do
+            if [[ -e "$file" ]]; then
+                cp -r "$file" "$INSTALL_DIR/" 2>/dev/null
+            fi
+        done
+    fi
+    
+    # Verify critical files were copied
+    if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
+        error "Critical file docker/docker-compose.prod.yml missing after copy. Installation failed."
+    fi
+    
+    if [[ ! -f "$INSTALL_DIR/docker/Dockerfile.main" ]]; then
+        error "Critical file docker/Dockerfile.main missing after copy. Installation failed."
+    fi
+    
+    info "Files copied successfully. Verifying install directory contents:"
+    ls -la "$INSTALL_DIR/"
+    info "Docker directory contents:"
+    ls -la "$INSTALL_DIR/docker/"
     
     # Change to install directory after copying
     cd "$INSTALL_DIR"
