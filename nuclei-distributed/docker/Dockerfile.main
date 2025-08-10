@@ -1,0 +1,58 @@
+# Multi-stage build for the main application
+FROM node:18-alpine AS web-builder
+
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm install
+
+COPY web/ ./
+RUN npm run build
+
+# Go builder stage
+FROM golang:1.21-alpine AS go-builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY pkg/ ./pkg/
+COPY cmd/ ./cmd/
+
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/main.go
+
+# Final stage
+FROM alpine:latest
+
+# Install required packages
+RUN apk --no-cache add ca-certificates curl
+
+WORKDIR /app
+
+# Copy the binary
+COPY --from=go-builder /app/main .
+
+# Copy the web assets
+COPY --from=web-builder /app/web/build ./web/dist
+
+# Copy scripts
+COPY scripts/ ./scripts/
+
+# Make scripts executable
+RUN chmod +x ./scripts/*.sh
+
+# Create a non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+# Change ownership
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["./main"]
