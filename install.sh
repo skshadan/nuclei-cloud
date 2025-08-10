@@ -234,8 +234,20 @@ setup_project_directory() {
         if [[ -f "$ORIGINAL_DIR/docker/Dockerfile.main" ]]; then
             info "Found Dockerfile.main in original directory: $ORIGINAL_DIR"
             info "Copying files from $ORIGINAL_DIR to $INSTALL_DIR"
+            
+            # Copy all files and directories
             cp -r "$ORIGINAL_DIR"/* "$INSTALL_DIR"/ 2>/dev/null || true
-            cp -r "$ORIGINAL_DIR"/.[^.]* "$INSTALL_DIR"/ 2>/dev/null || true
+            
+            # Copy hidden files (like .env) but skip . and ..
+            find "$ORIGINAL_DIR" -maxdepth 1 -name '.*' ! -name '.' ! -name '..' -exec cp -r {} "$INSTALL_DIR"/ \; 2>/dev/null || true
+            
+            # Verify critical files were copied
+            if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
+                error "Failed to copy docker-compose.prod.yml to $INSTALL_DIR"
+            fi
+            
+            info "Files copied successfully. Contents of $INSTALL_DIR:"
+            ls -la "$INSTALL_DIR"
         else
             # Fallback: try script directory
             SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -384,9 +396,9 @@ WorkingDirectory=$INSTALL_DIR
 User=$SERVICE_USER
 Group=$SERVICE_USER
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/local/bin/docker-compose -f docker/docker-compose.prod.yml up -d --build
-ExecStop=/usr/local/bin/docker-compose -f docker/docker-compose.prod.yml down
-ExecReload=/usr/local/bin/docker-compose -f docker/docker-compose.prod.yml restart
+ExecStart=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.prod.yml up -d --build
+ExecStop=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.prod.yml down
+ExecReload=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.prod.yml restart
 TimeoutStartSec=300
 
 [Install]
@@ -406,11 +418,18 @@ start_application() {
     
     cd "$INSTALL_DIR"
     
+    # Verify files were copied correctly
+    if [[ ! -f "docker/docker-compose.prod.yml" ]]; then
+        error "docker/docker-compose.prod.yml not found in $INSTALL_DIR. Files may not have been copied correctly."
+    fi
+    
     # Export environment variables for docker-compose
-    export $(cat .env | grep -v '^#' | xargs)
+    set -a  # automatically export all variables
+    source .env
+    set +a  # stop auto-exporting
     
     # Build and start services
-    sudo -u $SERVICE_USER docker-compose -f docker/docker-compose.prod.yml up -d --build
+    docker-compose -f docker/docker-compose.prod.yml up -d --build
     
     # Wait for services to start
     sleep 10
