@@ -3,10 +3,13 @@
 # --- React builder ---
 FROM node:18-alpine AS web-builder
 WORKDIR /app/web
-# Copy package files for better layer caching
-COPY web/package*.json ./
+
+# Copy package files
+COPY web/package.json ./
+
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install
+
 # Copy source and build
 COPY web/ ./
 RUN npm run build
@@ -15,12 +18,15 @@ RUN npm run build
 FROM golang:1.21-alpine AS go-builder
 RUN apk add --no-cache git ca-certificates
 WORKDIR /app
+
 # Go modules first for better layer cache
 COPY go.mod go.sum ./
 RUN go mod download
+
 # Copy source
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
+
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -o main ./cmd/main.go
 
@@ -35,8 +41,10 @@ RUN addgroup -g 1001 -S appgroup && \
 
 # Copy API binary
 COPY --from=go-builder /app/main ./main
+
 # Copy built React app
 COPY --from=web-builder /app/web/build ./web/dist/
+
 # Copy scripts if present
 COPY scripts/ ./scripts/
 
