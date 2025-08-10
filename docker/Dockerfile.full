@@ -1,4 +1,16 @@
-## Dockerfile for full backend (Go API + static web)
+## Dockerfile for full backend (Go API + React frontend)
+
+# --- React builder ---
+FROM node:18-alpine AS web-builder
+WORKDIR /app/web
+# Copy package files for better layer caching
+COPY web/package*.json ./
+# Install dependencies
+RUN npm ci --only=production
+# Copy source and build
+COPY web/ ./
+RUN npm run build
+
 # --- Go builder ---
 FROM golang:1.21-alpine AS go-builder
 RUN apk add --no-cache git ca-certificates
@@ -14,15 +26,30 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -o main ./cmd/main.go
 
 # --- Final runtime ---
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates curl
+RUN apk --no-cache add ca-certificates curl tzdata
 WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
 # Copy API binary
 COPY --from=go-builder /app/main ./main
-# Copy static web assets
-COPY web/dist/ ./web/dist/
+# Copy built React app
+COPY --from=web-builder /app/web/build ./web/dist/
 # Copy scripts if present
 COPY scripts/ ./scripts/
-RUN chmod -R a+rX /app && chmod -R a+rx /app/scripts 2>/dev/null || true
+
+# Set permissions
+RUN chmod +x ./main && \
+    chmod -R a+rX /app && \
+    chmod -R a+rx /app/scripts 2>/dev/null || true && \
+    chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 CMD curl -fsS http://localhost:8080/health || exit 1
-CMD ["/app/main"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
+  CMD curl -fsS http://localhost:8080/health || exit 1
+CMD ["./main"]

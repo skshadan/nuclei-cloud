@@ -157,7 +157,7 @@ const App: React.FC = () => {
   return (
     <div className="app-container">
       <header className="header">
-        <h1>🎯 Nuclei Distributed Scanner</h1>
+        <h1> Nuclei Distributed Scanner</h1>
         <p>Scan thousands of domains across multiple droplets</p>
       </header>
 

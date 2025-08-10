@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 🚀 Nuclei Distributed Scanner - One-Click Installation Script
+# 🚀 Nuclei Distributed Scanner - Robust Installation Script
 # This script installs and configures everything needed to run the distributed scanner
 
 set -e  # Exit on any error
@@ -18,6 +18,7 @@ NC='\033[0m' # No Color
 PROJECT_NAME="nuclei-distributed"
 INSTALL_DIR="/opt/${PROJECT_NAME}"
 SERVICE_USER="nuclei"
+COMPOSE_FILE="docker-compose.full.yml"
 REDIS_PASSWORD=""
 MAIN_SERVER_IP=""
 DO_API_TOKEN=""
@@ -50,6 +51,7 @@ warn() {
 
 error() {
     echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
+    echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Installation failed. Check $LOG_FILE for details.${NC}"
     exit 1
 }
 
@@ -57,11 +59,33 @@ info() {
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
-# Check if running as root
-check_root() {
+# Pre-flight checks
+preflight_checks() {
+    log "Running pre-flight checks..."
+    
+    # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root. Please use: sudo $0"
+        error "This script must be run as root. Please use sudo."
     fi
+    
+    # Store the original directory (where script was executed from)
+    ORIGINAL_DIR="$PWD"
+    log "Script executed from: $ORIGINAL_DIR"
+    
+    # Check if we're in the project directory
+    if [[ ! -f "docker/Dockerfile.full" ]]; then
+        error "This script must be run from the nuclei-cloud project directory. Missing docker/Dockerfile.full"
+    fi
+    
+    if [[ ! -f "docker/$COMPOSE_FILE" ]]; then
+        error "Missing required file: docker/$COMPOSE_FILE"
+    fi
+    
+    if [[ ! -f "go.mod" ]]; then
+        error "Missing go.mod file. Are you in the correct project directory?"
+    fi
+    
+    log "Pre-flight checks passed"
 }
 
 # Detect operating system
@@ -69,48 +93,33 @@ detect_os() {
     log "Detecting operating system..."
     
     if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
-        OS=$NAME
-        VER=$VERSION_ID
-    elif type lsb_release >/dev/null 2>&1; then
-        OS=$(lsb_release -si)
-        VER=$(lsb_release -sr)
-    elif [[ -f /etc/redhat-release ]]; then
-        OS="Red Hat Enterprise Linux"
-        VER=$(grep -oE '[0-9]+\.[0-9]+' /etc/redhat-release)
+        source /etc/os-release
+        OS="$NAME $VERSION"
+        OS_ID="$ID"
+        OS_VERSION="$VERSION_ID"
     else
-        error "Cannot detect operating system"
+        error "Cannot detect operating system. /etc/os-release not found."
     fi
     
-    info "Detected OS: $OS $VER"
+    info "Detected OS: $OS"
 }
 
-# Generate secure passwords
-generate_password() {
-    openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
-}
-
-# Get server external IP
-get_external_ip() {
+# Detect server IP
+detect_server_ip() {
     log "Detecting server external IP address..."
     
     # Try multiple methods to get external IP
-    EXTERNAL_IP=$(curl -s ipv4.icanhazip.com 2>/dev/null || \
-                  curl -s ifconfig.me 2>/dev/null || \
-                  curl -s ipinfo.io/ip 2>/dev/null || \
-                  wget -qO- http://ipecho.net/plain 2>/dev/null)
+    MAIN_SERVER_IP=$(curl -s https://ipv4.icanhazip.com/ || curl -s https://api.ipify.org || curl -s https://checkip.amazonaws.com/ | tr -d '\n')
     
-    if [[ -z "$EXTERNAL_IP" ]]; then
-        warn "Could not automatically detect external IP"
-        read -p "Please enter your server's external IP address: " EXTERNAL_IP
+    if [[ -z "$MAIN_SERVER_IP" ]]; then
+        warn "Could not auto-detect external IP. Trying local network IP..."
+        MAIN_SERVER_IP=$(hostname -I | awk '{print $1}')
     fi
     
-    # Validate IP format
-    if [[ ! $EXTERNAL_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        error "Invalid IP address format: $EXTERNAL_IP"
+    if [[ -z "$MAIN_SERVER_IP" ]]; then
+        error "Could not detect server IP address"
     fi
     
-    MAIN_SERVER_IP="$EXTERNAL_IP"
     info "Using external IP: $MAIN_SERVER_IP"
 }
 
@@ -118,21 +127,22 @@ get_external_ip() {
 update_system() {
     log "Updating system packages..."
     
-    case "$OS" in
-        *"Ubuntu"*|*"Debian"*)
-            apt-get update && apt-get upgrade -y
+    case "$OS_ID" in
+        ubuntu|debian)
+            apt-get update -qq
+            apt-get upgrade -y -qq
             apt-get install -y curl wget git ufw openssl jq make rsync
             ;;
-        *"CentOS"*|*"Red Hat"*|*"Rocky"*|*"AlmaLinux"*)
-            yum update -y
+        centos|rhel)
+            yum update -y -q
             yum install -y curl wget git firewalld openssl jq make rsync
             ;;
-        *"Fedora"*)
-            dnf update -y
+        fedora)
+            dnf update -y -q
             dnf install -y curl wget git firewalld openssl jq make rsync
             ;;
         *)
-            warn "Unsupported OS. Attempting to continue..."
+            error "Unsupported operating system: $OS_ID"
             ;;
     esac
 }
@@ -141,61 +151,71 @@ update_system() {
 install_docker() {
     log "Installing Docker..."
     
-    # Check if Docker is already installed
-    if command -v docker &> /dev/null; then
+    if command -v docker >/dev/null 2>&1; then
         info "Docker is already installed"
         docker --version
         return 0
     fi
     
-    # Install Docker using official script
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sh get-docker.sh
+    case "$OS_ID" in
+        ubuntu|debian)
+            # Add Docker's official GPG key
+            curl -fsSL https://download.docker.com/linux/$OS_ID/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            
+            # Add Docker repository
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/$OS_ID $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+            
+            # Install Docker
+            apt-get update -qq
+            apt-get install -y docker-ce docker-ce-cli containerd.io
+            ;;
+        centos|rhel)
+            yum install -y yum-utils
+            yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            yum install -y docker-ce docker-ce-cli containerd.io
+            ;;
+        fedora)
+            dnf install -y dnf-plugins-core
+            dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+            dnf install -y docker-ce docker-ce-cli containerd.io
+            ;;
+    esac
     
     # Start and enable Docker
     systemctl start docker
     systemctl enable docker
     
-    # Add nuclei user to docker group (will be created later)
-    usermod -aG docker root
-    
     log "Docker installed successfully"
-    docker --version
-    
-    # Clean up
-    rm -f get-docker.sh
 }
 
 # Install Docker Compose
 install_docker_compose() {
     log "Installing Docker Compose..."
     
-    # Check if Docker Compose is already installed
-    if command -v docker-compose &> /dev/null; then
+    if command -v docker-compose >/dev/null 2>&1; then
         info "Docker Compose is already installed"
         docker-compose --version
         return 0
     fi
     
-    # Get latest version
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
-    
-    # Install Docker Compose
-    curl -L "https://github.com/docker/compose/releases/download/${LATEST_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    # Install latest version of Docker Compose
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
-    
-    # Create symlink for easier access
     ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
     
-    log "Docker Compose installed successfully"
-    docker-compose --version
+    # Verify installation
+    if command -v docker-compose >/dev/null 2>&1; then
+        docker-compose --version
+        log "Docker Compose installed successfully"
+    else
+        error "Failed to install Docker Compose"
+    fi
 }
 
 # Create service user
 create_service_user() {
     log "Creating service user: $SERVICE_USER"
     
-    # Check if user already exists
     if id "$SERVICE_USER" &>/dev/null; then
         info "User $SERVICE_USER already exists"
         return 0
@@ -214,149 +234,124 @@ create_service_user() {
 setup_project_directory() {
     log "Setting up project directory: $INSTALL_DIR"
     
-    # Store the original directory where the script was called from
-    ORIGINAL_DIR="$PWD"
-    
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR"
-    
-    # Always do fresh installation - copy files from current directory to install directory
-    info "Fresh installation - copying files from $ORIGINAL_DIR to $INSTALL_DIR"
-    
-    info "Original directory: $ORIGINAL_DIR"
-    info "Install directory: $INSTALL_DIR"
-    
-    # First, ensure we're in the original directory
+    # Ensure we're in the original directory
     cd "$ORIGINAL_DIR"
     
-    # Verify we have the required files
-    if [[ ! -f "docker/Dockerfile.main" ]]; then
-        error "docker/Dockerfile.main not found in $ORIGINAL_DIR. Please run from the nuclei-cloud project directory."
-    fi
-    
-    if [[ ! -f "docker/docker-compose.prod.yml" ]]; then
-        error "docker/docker-compose.prod.yml not found in $ORIGINAL_DIR. Missing required files."
-    fi
-    
-    info "Found all required files. Copying from $ORIGINAL_DIR to $INSTALL_DIR"
-    
-    # Remove any existing installation to ensure clean copy
+    # Create and clean installation directory
+    mkdir -p "$INSTALL_DIR"
     rm -rf "$INSTALL_DIR"/*
     rm -rf "$INSTALL_DIR"/.[^.]*
     
+    info "Copying project files from $ORIGINAL_DIR to $INSTALL_DIR"
+    
     # Use rsync for reliable copying (fallback to cp if rsync not available)
     if command -v rsync >/dev/null 2>&1; then
-        info "Using rsync for file copying..."
-        rsync -av --exclude='.git' ./ "$INSTALL_DIR/"
+        rsync -av --exclude='.git' --exclude='node_modules' --exclude='*.log' ./ "$INSTALL_DIR/"
     else
-        info "Using cp for file copying..."
-        # Copy all visible files and directories
-        cp -r * "$INSTALL_DIR/" 2>/dev/null
-        
-        # Copy hidden files one by one to avoid . and .. issues  
+        # Fallback to cp
+        cp -r * "$INSTALL_DIR/" 2>/dev/null || true
         for file in .[^.]*; do
-            if [[ -e "$file" ]]; then
-                cp -r "$file" "$INSTALL_DIR/" 2>/dev/null
+            if [[ -e "$file" && "$file" != ".git" ]]; then
+                cp -r "$file" "$INSTALL_DIR/" 2>/dev/null || true
             fi
         done
     fi
     
-    # Verify critical files were copied
-    if [[ ! -f "$INSTALL_DIR/docker/docker-compose.prod.yml" ]]; then
-        error "Critical file docker/docker-compose.prod.yml missing after copy. Installation failed."
-    fi
+    # Verify critical files
+    local required_files=(
+        "docker/Dockerfile.full"
+        "docker/$COMPOSE_FILE"
+        "go.mod"
+        "pkg/api/routes.go"
+        "web/package.json"
+    )
     
-    if [[ ! -f "$INSTALL_DIR/docker/Dockerfile.main" ]]; then
-        error "Critical file docker/Dockerfile.main missing after copy. Installation failed."
-    fi
+    for file in "${required_files[@]}"; do
+        if [[ ! -f "$INSTALL_DIR/$file" ]]; then
+            error "Critical file missing: $file"
+        fi
+    done
     
-    info "Files copied successfully. Verifying install directory contents:"
-    ls -la "$INSTALL_DIR/"
-    info "Docker directory contents:"
-    ls -la "$INSTALL_DIR/docker/"
-    
-    # Change to install directory after copying
-    cd "$INSTALL_DIR"
-    
-    # Set ownership
+    # Set ownership and permissions
     chown -R $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR"
     chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
     chmod +x "$INSTALL_DIR"/scripts/*.sh 2>/dev/null || true
+    
+    info "Project files copied successfully"
 }
 
 # Configure firewall
 configure_firewall() {
     log "Configuring firewall..."
     
-    case "$OS" in
-        *"Ubuntu"*|*"Debian"*)
-            # UFW configuration
+    case "$OS_ID" in
+        ubuntu|debian)
             ufw --force enable
             ufw allow ssh
-            ufw allow 8080/tcp comment "Nuclei Distributed Scanner"
+            ufw allow 8080/tcp comment "Nuclei Scanner"
             ufw allow 80/tcp comment "HTTP"
             ufw allow 443/tcp comment "HTTPS"
             ufw reload
-            info "UFW firewall configured"
             ;;
-        *"CentOS"*|*"Red Hat"*|*"Rocky"*|*"AlmaLinux"*|*"Fedora"*)
-            # Firewalld configuration
+        centos|rhel|fedora)
             systemctl start firewalld
             systemctl enable firewalld
+            firewall-cmd --permanent --add-service=ssh
             firewall-cmd --permanent --add-port=8080/tcp
             firewall-cmd --permanent --add-port=80/tcp
             firewall-cmd --permanent --add-port=443/tcp
             firewall-cmd --reload
-            info "Firewalld configured"
-            ;;
-        *)
-            warn "Could not configure firewall automatically. Please ensure ports 8080, 80, and 443 are open."
             ;;
     esac
+    
+    info "Firewall configured"
 }
 
-# Get user input
-get_user_input() {
+# Gather configuration
+gather_configuration() {
     log "Gathering configuration information..."
     
-    # Get DigitalOcean API Token
-    if [[ -z "$DO_API_TOKEN" ]]; then
-        echo
-        echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${YELLOW}║                            DIGITALOCEAN API TOKEN                           ║${NC}"
-        echo -e "${YELLOW}║                                                                              ║${NC}"
-        echo -e "${YELLOW}║ You need a DigitalOcean API token to create worker droplets.               ║${NC}"
-        echo -e "${YELLOW}║ Get one at: https://cloud.digitalocean.com/account/api/tokens               ║${NC}"
-        echo -e "${YELLOW}║                                                                              ║${NC}"
-        echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
-        echo
-        
-        while [[ -z "$DO_API_TOKEN" ]]; do
-            read -p "Enter your DigitalOcean API Token: " DO_API_TOKEN
-            if [[ -z "$DO_API_TOKEN" ]]; then
-                warn "API Token is required to proceed"
-            fi
-        done
-    fi
+    echo -e "${CYAN}"
+    echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+    echo "║ DIGITALOCEAN API TOKEN                                                       ║"
+    echo "║                                                                              ║"
+    echo "║ You need a DigitalOcean API token to create worker droplets.                ║"
+    echo "║ Get one at: https://cloud.digitalocean.com/account/api/tokens               ║"
+    echo "║                                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    
+    # Get DigitalOcean API token
+    while [[ -z "$DO_API_TOKEN" ]]; do
+        read -p "Enter your DigitalOcean API Token: " DO_API_TOKEN
+        if [[ -z "$DO_API_TOKEN" ]]; then
+            echo "API token cannot be empty. Please try again."
+        fi
+    done
     
     # Confirm server IP
     echo
-    echo -e "${BLUE}Detected server IP: $MAIN_SERVER_IP${NC}"
-    read -p "Is this correct? (y/n): " confirm_ip
-    if [[ $confirm_ip =~ ^[Nn] ]]; then
-        read -p "Enter the correct external IP: " MAIN_SERVER_IP
+    echo "Detected server IP: $MAIN_SERVER_IP"
+    read -p "Is this correct? (y/n): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        read -p "Enter the correct server IP: " MAIN_SERVER_IP
     fi
+    
+    # Generate Redis password
+    REDIS_PASSWORD=$(openssl rand -base64 32)
 }
 
 # Generate environment configuration
-generate_environment() {
+generate_env_config() {
     log "Generating environment configuration..."
     
-    # Generate secure Redis password
-    REDIS_PASSWORD=$(generate_password)
+    cd "$INSTALL_DIR"
     
     # Create .env file
-    cat > "$INSTALL_DIR/.env" << EOF
+    cat > .env << EOF
+# Nuclei Distributed Scanner Configuration
+# Generated automatically by installer
+
 # DigitalOcean Configuration
 DO_API_TOKEN=$DO_API_TOKEN
 
@@ -370,20 +365,26 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 
 # Application Settings
 GIN_MODE=release
+LOG_LEVEL=info
+
+# Worker Settings
 AUTO_DESTROY=true
 MAX_AGE_HOURS=2
+MAX_WORKERS=10
+WORKER_TIMEOUT=3600
 
 # Security Settings
+SESSION_SECRET=$(openssl rand -base64 32)
+
+# Optional: Custom Nuclei Settings
 NUCLEI_RATE_LIMIT=10
 NUCLEI_TIMEOUT=30
 NUCLEI_RETRIES=2
-
-# Generated on $(date)
 EOF
     
     # Set proper permissions
-    chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
-    chmod 600 "$INSTALL_DIR/.env"
+    chown $SERVICE_USER:$SERVICE_USER .env
+    chmod 600 .env
     
     info "Environment configuration created"
 }
@@ -405,10 +406,10 @@ WorkingDirectory=$INSTALL_DIR
 User=$SERVICE_USER
 Group=$SERVICE_USER
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.simple.yml up -d --build
-ExecStop=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.simple.yml down
-ExecReload=/usr/local/bin/docker-compose -f /opt/nuclei-distributed/docker/docker-compose.simple.yml restart
-TimeoutStartSec=300
+ExecStart=/usr/local/bin/docker-compose -f $INSTALL_DIR/docker/$COMPOSE_FILE up -d --build
+ExecStop=/usr/local/bin/docker-compose -f $INSTALL_DIR/docker/$COMPOSE_FILE down
+ExecReload=/usr/local/bin/docker-compose -f $INSTALL_DIR/docker/$COMPOSE_FILE restart
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target
@@ -421,35 +422,37 @@ EOF
     info "Systemd service created and enabled"
 }
 
-# Install and start application
+# Start application
 start_application() {
     log "Starting Nuclei Distributed Scanner..."
     
     cd "$INSTALL_DIR"
     
-    # Verify files were copied correctly
-    if [[ ! -f "docker/docker-compose.full.yml" ]]; then
-        error "docker/docker-compose.full.yml not found in $INSTALL_DIR. Files may not have been copied correctly."
-    fi
-    
-    # Export environment variables for docker-compose
-    set -a  # automatically export all variables
+    # Set environment variables
+    set -a
     source .env
-    set +a  # stop auto-exporting
+    set +a
     
-    info "Starting full Nuclei Distributed Scanner with backend API..."
-    # Build and start services with full backend
-    docker-compose -f docker/docker-compose.full.yml up -d --build
+    # Build and start services
+    info "Building and starting Docker containers..."
+    docker-compose -f docker/$COMPOSE_FILE up -d --build
     
     # Wait for services to start
-    sleep 10
+    log "Waiting for services to initialize..."
+    sleep 30
     
-    # Check if services are running
-    if docker-compose -f docker/docker-compose.full.yml ps | grep -q "Up"; then
-        log "Application started successfully!"
-    else
-        error "Failed to start application. Check logs with: docker-compose -f docker/docker-compose.full.yml logs"
-    fi
+    # Check health
+    for i in {1..10}; do
+        if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+            log "Application started successfully!"
+            break
+        elif [[ $i -eq 10 ]]; then
+            error "Application failed to start. Check logs with: docker-compose -f docker/$COMPOSE_FILE logs"
+        else
+            info "Waiting for application to start... ($i/10)"
+            sleep 10
+        fi
+    done
 }
 
 # Create management scripts
@@ -457,46 +460,53 @@ create_management_scripts() {
     log "Creating management scripts..."
     
     # Create start script
-    cat > /usr/local/bin/nuclei-start << 'EOF'
+    cat > /usr/local/bin/nuclei-start << EOF
 #!/bin/bash
-cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.full.yml up -d
+cd $INSTALL_DIR
+set -a; source .env; set +a
+docker-compose -f docker/$COMPOSE_FILE up -d
 echo "Nuclei Distributed Scanner started"
-echo "Access at: http://$(hostname -I | awk '{print $1}'):8080"
+echo "Web UI: http://$MAIN_SERVER_IP:8080"
 EOF
     
     # Create stop script
-    cat > /usr/local/bin/nuclei-stop << 'EOF'
+    cat > /usr/local/bin/nuclei-stop << EOF
 #!/bin/bash
-cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.full.yml down
+cd $INSTALL_DIR
+docker-compose -f docker/$COMPOSE_FILE down
 echo "Nuclei Distributed Scanner stopped"
 EOF
     
     # Create status script
-    cat > /usr/local/bin/nuclei-status << 'EOF'
+    cat > /usr/local/bin/nuclei-status << EOF
 #!/bin/bash
-cd /opt/nuclei-distributed
+cd $INSTALL_DIR
 echo "=== Service Status ==="
-docker-compose -f docker/docker-compose.full.yml ps
+docker-compose -f docker/$COMPOSE_FILE ps
+echo
+echo "=== Health Check ==="
+curl -sf http://localhost:8080/health && echo "✅ API is healthy" || echo "❌ API is not responding"
 echo
 echo "=== Recent Logs ==="
-docker-compose -f docker/docker-compose.full.yml logs --tail=10
+docker-compose -f docker/$COMPOSE_FILE logs --tail=10
 EOF
     
     # Create logs script
-    cat > /usr/local/bin/nuclei-logs << 'EOF'
+    cat > /usr/local/bin/nuclei-logs << EOF
 #!/bin/bash
-cd /opt/nuclei-distributed
-docker-compose -f docker/docker-compose.full.yml logs -f
+cd $INSTALL_DIR
+docker-compose -f docker/$COMPOSE_FILE logs -f
 EOF
     
-    # Create cleanup script
-    cat > /usr/local/bin/nuclei-cleanup << 'EOF'
+    # Create restart script
+    cat > /usr/local/bin/nuclei-restart << EOF
 #!/bin/bash
-cd /opt/nuclei-distributed
-./scripts/cleanup.sh
-echo "Old droplets cleaned up"
+cd $INSTALL_DIR
+set -a; source .env; set +a
+echo "Restarting Nuclei Distributed Scanner..."
+docker-compose -f docker/$COMPOSE_FILE down
+docker-compose -f docker/$COMPOSE_FILE up -d --build
+echo "Restart complete"
 EOF
     
     # Make scripts executable
@@ -505,95 +515,61 @@ EOF
     info "Management scripts created in /usr/local/bin/"
 }
 
-# Perform health check
-health_check() {
-    log "Performing health check..."
+# Final setup and verification
+final_setup() {
+    log "Performing final setup and verification..."
     
-    local max_attempts=30
-    local attempt=1
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        if curl -s -f "http://localhost:8080/health" > /dev/null; then
-            log "Health check passed!"
-            return 0
-        fi
-        
-        info "Waiting for application to start... (attempt $attempt/$max_attempts)"
-        sleep 5
-        ((attempt++))
-    done
-    
-    warn "Health check failed. Application may not be ready yet."
-    info "Check logs with: nuclei-logs"
-    return 1
-}
-
-# Print installation summary
-print_summary() {
-    echo
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                        🎉 INSTALLATION COMPLETE! 🎉                        ║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
-    echo
-    echo -e "${CYAN}📋 Installation Summary:${NC}"
-    echo -e "   • Location: ${YELLOW}$INSTALL_DIR${NC}"
-    echo -e "   • Service User: ${YELLOW}$SERVICE_USER${NC}"
-    echo -e "   • Web Interface: ${YELLOW}http://$MAIN_SERVER_IP:8080${NC}"
-    echo -e "   • Log File: ${YELLOW}$LOG_FILE${NC}"
-    echo
-    echo -e "${CYAN}🎮 Management Commands:${NC}"
-    echo -e "   • Start service: ${YELLOW}nuclei-start${NC} or ${YELLOW}systemctl start nuclei-distributed${NC}"
-    echo -e "   • Stop service: ${YELLOW}nuclei-stop${NC} or ${YELLOW}systemctl stop nuclei-distributed${NC}"
-    echo -e "   • View status: ${YELLOW}nuclei-status${NC}"
-    echo -e "   • View logs: ${YELLOW}nuclei-logs${NC}"
-    echo -e "   • Cleanup droplets: ${YELLOW}nuclei-cleanup${NC}"
-    echo
-    echo -e "${CYAN}📊 Next Steps:${NC}"
-    echo -e "   1. Open ${YELLOW}http://$MAIN_SERVER_IP:8080${NC} in your browser"
-    echo -e "   2. Paste your target domains (one per line)"
-    echo -e "   3. Choose number of droplets (auto-optimized)"
-    echo -e "   4. Click '🚀 Start Scan' to begin"
-    echo -e "   5. Monitor real-time progress and download results"
-    echo
-    echo -e "${CYAN}🔧 Configuration Files:${NC}"
-    echo -e "   • Environment: ${YELLOW}$INSTALL_DIR/.env${NC}"
-    echo -e "   • Docker Compose: ${YELLOW}$INSTALL_DIR/docker/docker-compose.prod.yml${NC}"
-    echo -e "   • Service: ${YELLOW}/etc/systemd/system/nuclei-distributed.service${NC}"
-    echo
-    echo -e "${GREEN}Happy Scanning! 🔍🎯${NC}"
-    echo
-}
-
-# Cleanup function for error handling
-cleanup() {
-    if [[ $? -ne 0 ]]; then
-        error "Installation failed. Check $LOG_FILE for details."
-        echo -e "${YELLOW}You can retry the installation or report issues at:${NC}"
-        echo -e "${YELLOW}https://github.com/your-username/nuclei-distributed/issues${NC}"
+    # Test Docker Compose
+    cd "$INSTALL_DIR"
+    if ! docker-compose -f docker/$COMPOSE_FILE config >/dev/null; then
+        error "Docker Compose configuration is invalid"
     fi
+    
+    # Start the systemd service
+    systemctl start nuclei-distributed
+    
+    info "Installation completed successfully!"
+    
+    echo -e "${GREEN}"
+    echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+    echo "║                           🎉 INSTALLATION COMPLETE 🎉                      ║"
+    echo "║                                                                              ║"
+    echo "║  Nuclei Distributed Scanner is now running!                                 ║"
+    echo "║                                                                              ║"
+    echo "║  🌐 Web UI: http://$MAIN_SERVER_IP:8080                     ║"
+    echo "║  📊 API Docs: http://$MAIN_SERVER_IP:8080/api              ║"
+    echo "║                                                                              ║"
+    echo "║  📋 Management Commands:                                                     ║"
+    echo "║     nuclei-start    - Start the scanner                                     ║"
+    echo "║     nuclei-stop     - Stop the scanner                                      ║"
+    echo "║     nuclei-status   - Check status                                          ║"
+    echo "║     nuclei-logs     - View logs                                             ║"
+    echo "║     nuclei-restart  - Restart services                                      ║"
+    echo "║                                                                              ║"
+    echo "║  📝 Logs: $LOG_FILE                               ║"
+    echo "║                                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
 }
 
-# Main installation function
+# Main installation flow
 main() {
-    trap cleanup EXIT
-    
     print_banner
-    check_root
+    preflight_checks
     detect_os
-    get_external_ip
+    detect_server_ip
     update_system
     install_docker
     install_docker_compose
     create_service_user
     setup_project_directory
     configure_firewall
-    get_user_input
-    generate_environment
+    gather_configuration
+    generate_env_config
     create_systemd_service
     create_management_scripts
     start_application
-    health_check
-    print_summary
+    final_setup
 }
 
 # Run main function
