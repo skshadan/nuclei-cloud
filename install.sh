@@ -226,12 +226,21 @@ setup_project_directory() {
         git pull origin main || git pull origin master
     else
         info "Fresh installation..."
-        # If this is being run from within the project, copy files
-        if [[ -f "../docker/Dockerfile.main" ]]; then
-            cp -r ../* ./ 2>/dev/null || true
-            cp -r ../.[^.]* ./ 2>/dev/null || true
+        # Get the current directory where the script is located
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        
+        # Check if we have the required files in the script directory
+        if [[ -f "$SCRIPT_DIR/docker/Dockerfile.main" ]]; then
+            # Only copy files if we're not already in the install directory
+            if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
+                info "Copying files from $SCRIPT_DIR to $INSTALL_DIR"
+                cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR"/ 2>/dev/null || true
+                cp -r "$SCRIPT_DIR"/.[^.]* "$INSTALL_DIR"/ 2>/dev/null || true
+            else
+                info "Already in install directory, no copy needed"
+            fi
         else
-            error "Please run this script from within the nuclei-distributed project directory"
+            error "Cannot find required files. Please ensure docker/Dockerfile.main exists in the project directory"
         fi
     fi
     
