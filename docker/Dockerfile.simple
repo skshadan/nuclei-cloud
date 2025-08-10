@@ -7,8 +7,8 @@ RUN apk --no-cache add curl
 # Copy web files to nginx
 COPY web/ /usr/share/nginx/html/
 
-# Copy nginx configuration
-COPY docker/nginx.conf /etc/nginx/nginx.conf
+# Copy simple nginx configuration
+COPY docker/nginx.simple.conf /etc/nginx/nginx.conf
 
 # Create a simple startup script
 RUN echo '#!/bin/sh' > /start.sh && \
