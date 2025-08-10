@@ -5,276 +5,116 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎯 Nuclei Distributed Scanner</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
-        
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
-        
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-        }
-        
-        textarea, input[type="number"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        
-        textarea:focus, input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        textarea {
-            height: 200px;
-            resize: vertical;
-            font-family: monospace;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 20px;
-            align-items: end;
-            flex-wrap: wrap;
-        }
-        
-        .droplet-control {
-            flex: 1;
-            min-width: 200px;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-block;
-        }
-        
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #5a6fd8;
-            transform: translateY(-2px);
-        }
-        
-        .btn-danger {
-            background: #f56565;
-            color: white;
-        }
-        
-        .btn-secondary {
-            background: #48bb78;
-            color: white;
-        }
-        
-        .status-info {
-            background: #e6fffa;
-            border: 1px solid #81e6d9;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-        
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
-        }
-        
-        .feature-card {
-            background: #f7fafc;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        
-        .feature-icon {
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-        
-        small {
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .demo-notice {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 20px 0;
-            text-align: center;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; color: #fff; margin-bottom: 28px; }
+        .header h1 { font-size: 2.2rem; margin-bottom: 8px; }
+        .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 18px; }
+        .input-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        textarea, input[type="number"] { width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 8px; font-size: 15px; }
+        textarea { height: 180px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .controls { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
+        .droplet-control { flex: 1; min-width: 220px; }
+        .btn { padding: 11px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: #667eea; color: #fff; }
+        .btn-secondary { background: #48bb78; color: #fff; }
+        .status { margin-top: 10px; font-size: 14px; color: #444; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .small { font-size: 12px; color: #666; }
+        .results { margin-top: 16px; max-height: 260px; overflow: auto; background: #f8fafc; border-radius: 8px; padding: 12px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; }
+        .b-critical{background:#e11d48}.b-high{background:#ef4444}.b-medium{background:#f59e0b}.b-low{background:#10b981}.b-info{background:#3b82f6}
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎯 Nuclei Distributed Scanner</h1>
-            <p>Scan thousands of domains across multiple DigitalOcean droplets</p>
-        </div>
-        
-        <div class="card">
-            <h2>🚀 Welcome to Nuclei Distributed Scanner</h2>
-            
-            <div class="demo-notice">
-                <strong>🔧 Frontend Under Development</strong><br>
-                The React frontend is being built. For now, you can interact with the API directly or use the management commands.
-            </div>
-            
-            <div class="input-group">
-                <label for="domains">🎯 Target Domains</label>
-                <textarea 
-                    id="domains" 
-                    placeholder="Enter domains (one per line)&#10;example.com&#10;test.com&#10;target.org"
-                    rows="10">
-                </textarea>
-                <small>Enter one domain per line for distributed scanning</small>
-            </div>
-            
-            <div class="controls">
-                <div class="droplet-control">
-                    <label for="droplets">🖥️ Number of Droplets</label>
-                    <input type="number" id="droplets" min="1" max="10" value="3">
-                    <small>1-10 droplets (auto-optimized based on domain count)</small>
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="startScan()">🚀 Start Scan</button>
-                    <button class="btn btn-secondary" onclick="checkStatus()">📊 Check Status</button>
-                </div>
-            </div>
-            
-            <div class="status-info">
-                <h3>📊 System Status</h3>
-                <p><strong>✅ Installation:</strong> Complete</p>
-                <p><strong>🐳 Docker:</strong> Running</p>
-                <p><strong>🔗 Redis:</strong> Connected</p>
-                <p><strong>🌐 Web UI:</strong> Active on port 8080</p>
-                <p><strong>💰 Cost:</strong> ~$0.009/hour per droplet</p>
-            </div>
-        </div>
-        
-        <div class="feature-grid">
-            <div class="feature-card">
-                <div class="feature-icon">⚡</div>
-                <h3>High-Speed Scanning</h3>
-                <p>Distribute domains across multiple droplets for parallel processing</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">💰</div>
-                <h3>Cost Effective</h3>
-                <p>Pay only for droplets during scans. Auto-cleanup after completion</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">📊</div>
-                <h3>Real-time Results</h3>
-                <p>Watch results stream in live via WebSocket connections</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">🔧</div>
-                <h3>Auto-scaling</h3>
-                <p>Intelligent optimization of droplet count based on workload</p>
-            </div>
-        </div>
+<div class="container">
+    <div class="header">
+        <h1>🎯 Nuclei Distributed Scanner</h1>
+        <p>Distributed nuclei scans across DigitalOcean droplets</p>
     </div>
 
-    <script>
-        function startScan() {
-            const domains = document.getElementById('domains').value;
-            const droplets = document.getElementById('droplets').value;
-            
-            if (!domains.trim()) {
-                alert('Please enter at least one domain');
-                return;
-            }
-            
-            const domainList = domains.split('\n').filter(d => d.trim());
-            
-            const scanData = {
-                domains: domainList,
-                droplets: parseInt(droplets)
-            };
-            
-            // This would normally make an API call
-            alert(`Scan configured:\n\nDomains: ${domainList.length}\nDroplets: ${droplets}\n\nAPI integration coming soon!`);
-            
-            console.log('Scan data:', scanData);
-        }
-        
-        function checkStatus() {
-            alert('Status check feature coming soon!\n\nFor now, use the management commands:\n• nuclei-status\n• nuclei-logs');
-        }
-        
-        // Show current time and server info
-        function updateStatus() {
-            const now = new Date().toLocaleString();
-            console.log('Nuclei Distributed Scanner - Active since:', now);
-        }
-        
-        updateStatus();
-        setInterval(updateStatus, 60000); // Update every minute
-    </script>
+    <div class="card">
+        <h3>Scan Configuration</h3>
+        <div class="input-group">
+            <label for="domains">🎯 Target Domains</label>
+            <textarea id="domains" placeholder="example.com\ntarget.org"></textarea>
+            <div class="small">One domain per line</div>
+        </div>
+        <div class="controls">
+            <div class="droplet-control">
+                <label for="droplets">🖥️ Droplets</label>
+                <input id="droplets" type="number" min="1" max="10" value="3" />
+            </div>
+            <div>
+                <button class="btn btn-primary" onclick="startScan()">🚀 Start Scan</button>
+                <button class="btn btn-secondary" onclick="checkStatus()">📊 Check Status</button>
+            </div>
+        </div>
+        <div id="status" class="status"></div>
+        <div id="results" class="results mono" style="display:none"></div>
+    </div>
+</div>
+<script>
+let currentScanId = '';
+
+async function startScan(){
+  const domains = document.getElementById('domains').value.split('\n').map(d=>d.trim()).filter(Boolean);
+  const droplets = parseInt(document.getElementById('droplets').value,10);
+  if(!domains.length){ alert('Please enter at least one domain'); return; }
+  setStatus('Submitting scan...');
+  try{
+    const res = await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domains,droplets})});
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.error||'failed'); }
+    currentScanId = data.scan_id;
+    setStatus(`Scan started. ID: ${currentScanId}. Opening live updates...`);
+    openWs(currentScanId);
+  }catch(e){ setStatus('Error: '+e.message,true); }
+}
+
+async function checkStatus(){
+  if(!currentScanId){ setStatus('No active scan. Start one first.'); return; }
+  try{
+    const res = await fetch(`/api/scan/${currentScanId}/status`);
+    const data = await res.json();
+    renderStatus(data);
+  }catch(e){ setStatus('Status error: '+e.message,true); }
+}
+
+function openWs(id){
+  try{
+    const ws = new WebSocket(`ws://${location.host}/ws/${id}`);
+    ws.onmessage = (ev)=>{ try{ const msg = JSON.parse(ev.data); handleMsg(msg); }catch{} };
+    ws.onopen = ()=> setStatus('Live updates connected.');
+    ws.onclose = ()=> setStatus('Live updates closed.');
+  }catch(e){ setStatus('WebSocket error: '+e.message,true); }
+}
+
+function handleMsg(msg){
+  if(msg.type==='status_update'){ renderStatus(msg.data); }
+  if(msg.type==='new_result'){ appendResult(msg.data); }
+  if(msg.type==='scan_complete'){ renderStatus(msg.data); setStatus('Scan complete.'); }
+}
+
+function renderStatus(s){
+  const pct = (s.progress||0).toFixed(1);
+  setStatus(`Progress: ${pct}% · Workers: ${(s.activeDroplets||[]).length} · Results: ${(s.results||[]).length}`);
+}
+
+function appendResult(r){
+  const box = document.getElementById('results');
+  box.style.display = 'block';
+  const sev = (r.severity||'info').toLowerCase();
+  const line = `[${new Date(r.timestamp||Date.now()).toLocaleTimeString()}] ${r.host}  ${r.template}  <span class="badge b-${sev}">${sev}</span>\n`;
+  box.innerHTML = line + box.innerHTML;
+}
+
+function setStatus(t,err){
+  const el = document.getElementById('status');
+  el.textContent = t; el.style.color = err ? '#b91c1c' : '#444';
+}
+</script>
 </body>
 </html>
