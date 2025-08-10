@@ -4,8 +4,8 @@ FROM nginx:alpine
 # Install curl for health checks
 RUN apk --no-cache add curl
 
-# Copy web files to nginx
-COPY web/ /usr/share/nginx/html/
+# Copy built web files to nginx
+COPY web/dist/ /usr/share/nginx/html/
 
 # Copy simple nginx configuration
 COPY docker/nginx.simple.conf /etc/nginx/nginx.conf
