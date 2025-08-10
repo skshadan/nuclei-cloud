@@ -229,8 +229,13 @@ setup_project_directory() {
         # Get the current directory where the script is located
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         
+        info "Script directory: $SCRIPT_DIR"
+        info "Install directory: $INSTALL_DIR"
+        info "Looking for: $SCRIPT_DIR/docker/Dockerfile.main"
+        
         # Check if we have the required files in the script directory
         if [[ -f "$SCRIPT_DIR/docker/Dockerfile.main" ]]; then
+            info "Found Dockerfile.main in script directory"
             # Only copy files if we're not already in the install directory
             if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
                 info "Copying files from $SCRIPT_DIR to $INSTALL_DIR"
@@ -240,7 +245,20 @@ setup_project_directory() {
                 info "Already in install directory, no copy needed"
             fi
         else
-            error "Cannot find required files. Please ensure docker/Dockerfile.main exists in the project directory"
+            # Try alternative checks
+            info "Dockerfile.main not found at expected location"
+            info "Current working directory: $(pwd)"
+            info "Files in current directory: $(ls -la)"
+            info "Files in docker directory: $(ls -la docker/ 2>/dev/null || echo 'docker directory not found')"
+            
+            # Check if we're running from the project directory directly
+            if [[ -f "./docker/Dockerfile.main" ]]; then
+                info "Found Dockerfile.main in current directory, copying files"
+                cp -r ./* "$INSTALL_DIR"/ 2>/dev/null || true
+                cp -r ./.[^.]* "$INSTALL_DIR"/ 2>/dev/null || true
+            else
+                error "Cannot find required files. Checked both $SCRIPT_DIR/docker/Dockerfile.main and ./docker/Dockerfile.main"
+            fi
         fi
     fi
     
